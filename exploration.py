@@ -41,39 +41,100 @@ class Explorer:
         Find valid frontier cells (free cells adjacent to unknown space).
         Returns list of (x,y) frontier centroids, filtered and ranked by exploration potential.
         """
-        # Parameters for frontier filtering
-        min_dist_between_frontiers = 3  # Minimum distance between frontier centroids
-        min_unknown_ratio = 0.3  # Minimum ratio of unknown cells in frontier neighborhood
-        
-        # Create kernels for neighbor checking
-        kernel = np.ones((3, 3))
-        observation_kernel = np.ones((5, 5))  # Larger kernel for unknown ratio check
-        
-        # Find free and unknown cells
+        # Find free, unknown, and obstacle cells
         free_cells = (self.known_map == 0)
         unknown = (self.known_map == -1)
         obstacles = (self.known_map == 1)
         
-        # Dilate obstacles slightly to avoid frontiers too close to walls
-        obstacles_dilated = binary_dilation(obstacles, np.ones((3, 3)))
-        valid_area = free_cells & ~obstacles_dilated
+        # Print debug info
+        print(f"\nMap statistics:")
+        print(f"Free cells: {np.sum(free_cells)}")
+        print(f"Unknown cells: {np.sum(unknown)}")
+        print(f"Obstacle cells: {np.sum(obstacles)}")
         
-        # Find frontier candidates (free cells next to unknown)
-        unknown_border = binary_dilation(unknown, kernel) & valid_area
+        # Create a temporary planning map for validation
+        planning_map = np.where(self.known_map >= 0, self.known_map, 0)
+        
+        frontiers = []
+        
+        # Iterate through all free cells
+        free_y, free_x = np.where(free_cells)
+        for x, y in zip(free_x, free_y):
+            # Skip if this point isn't valid in the planning map
+            if planning_map[x, y] != 0:
+                continue
+                
+            # Check 8-connected neighbors
+            x_min, x_max = max(0, x-1), min(self.size[0], x+2)
+            y_min, y_max = max(0, y-1), min(self.size[1], y+2)
+            neighborhood = self.known_map[x_min:x_max, y_min:y_max]
+            
+            # Count unknown and obstacle neighbors
+            unknown_count = np.sum(neighborhood == -1)
+            obstacle_count = np.sum(neighborhood == 1)
+            
+            # A frontier cell must:
+            # 1. Be free
+            # 2. Have at least one unknown neighbor
+            # 3. Not be completely surrounded by obstacles
+            if unknown_count > 0 and obstacle_count < 7:  # Allow more freedom for frontiers
+                # Check if this frontier is too close to existing ones
+                min_dist = 2  # Minimum distance between frontiers
+                too_close = False
+                for fx, fy in frontiers:
+                    if np.hypot(x - fx, y - fy) < min_dist:
+                        too_close = True
+                        break
+                
+                if not too_close and self.is_valid_frontier((x, y), planning_map):
+                    frontiers.append((x, y))
+                    print(f"Found frontier at ({x}, {y}) with {unknown_count} unknown neighbors")
+        
+        if not frontiers:
+            return []
+            
+        print(f"\nFound {len(frontiers)} potential frontiers")
+        
+        # Sort frontiers by exploration potential
+        scored_frontiers = []
+        for fx, fy in frontiers:
+            # Calculate the number of unknown neighbors again for scoring
+            x_min, x_max = max(0, fx-1), min(self.size[0], fx+2)
+            y_min, y_max = max(0, fy-1), min(self.size[1], fy+2)
+            unknown_neighbors = np.sum(self.known_map[x_min:x_max, y_min:y_max] == -1)
+            
+            # Calculate distances from robot and current goal
+            robot_x, robot_y = self.known_map.shape[0]//2, self.known_map.shape[1]//2
+            dist_from_robot = np.hypot(fx - robot_x, fy - robot_y)
+            
+            # Score based on:
+            # 1. Number of unknown neighbors (more is better)
+            # 2. Distance from current position (closer is better)
+            score = (2.0 * unknown_neighbors    # Weight unknown neighbors heavily
+                    - 0.5 * dist_from_robot)    # Slight penalty for distance
+            
+            scored_frontiers.append(((fx, fy), score))
+            
+        # Sort by score (higher is better)
+        scored_frontiers.sort(key=lambda x: -x[1])  # Negative for descending order
+        
+        # Print top frontiers with scores
+        print(f"\nTop frontiers with scores:")
+        for (fx, fy), score in scored_frontiers[:3]:
+            print(f"Frontier at ({fx}, {fy}): score = {score:.2f}")
+            
+        # Update frontier map
+        self.frontier_map = np.zeros(self.size, dtype=bool)
+        for (fx, fy), _ in scored_frontiers:
+            self.frontier_map[fx, fy] = True
+            
+        # Return the frontier positions only
+        return [f[0] for f in scored_frontiers]
         
         # Label connected components
         from scipy.ndimage import label
-        labels, num_features = label(unknown_border)
-        
-        frontiers = []
-        visited_positions = set()
-        
-        # Process each frontier cluster
-        for i in range(1, num_features + 1):
-            cluster = (labels == i)
-            
-            if np.sum(cluster) < self.min_frontier_size:
-                continue
+        if not frontiers:
+            return []
             
             # Get cluster points
             y_idx, x_idx = np.where(cluster)
@@ -85,39 +146,46 @@ class Explorer:
                 y_min, y_max = max(0, py-2), min(self.size[1], py+3)
                 neighborhood = unknown[y_min:y_max, x_min:x_max]
                 
-                # Calculate ratio of unknown cells in neighborhood
-                unknown_ratio = np.sum(neighborhood) / neighborhood.size
-                
-                if unknown_ratio < min_unknown_ratio:
-                    continue
-                
-                # Check if point is far enough from existing frontiers
-                too_close = False
-                for fx, fy in visited_positions:
-                    if np.hypot(px - fx, py - fy) < min_dist_between_frontiers:
-                        too_close = True
-                        break
-                
-                if too_close:
-                    continue
-                
-                # This is a valid frontier point
-                frontiers.append((px, py))
-                visited_positions.add((px, py))
+            if not frontiers:
+                return []
+            
+        print(f"\nFound {len(frontiers)} potential frontiers")
         
-        # Sort frontiers by exploration potential (distance from robot and unknown ratio)
-        if frontiers:
-            robot_pos = np.array([self.known_map.shape[0]//2, self.known_map.shape[1]//2])
-            frontiers.sort(key=lambda f: (
-                # Prefer points further from robot but not too far
-                -0.7 * min(np.hypot(f[0] - robot_pos[0], f[1] - robot_pos[1]), 15.0) +
-                # Prefer points with more unknown neighbors
-                0.3 * np.sum(unknown[max(0, int(f[1])-2):min(self.size[1], int(f[1])+3),
-                                   max(0, int(f[0])-2):min(self.size[0], int(f[0])+3)])
-            ))
+        # Sort frontiers by exploration potential
+        scored_frontiers = []
+        for fx, fy in frontiers:
+            # Calculate the number of unknown neighbors again for scoring
+            x_min, x_max = max(0, fx-1), min(self.size[0], fx+2)
+            y_min, y_max = max(0, fy-1), min(self.size[1], fy+2)
+            unknown_neighbors = np.sum(self.known_map[x_min:x_max, y_min:y_max] == -1)
+            
+            # Calculate distances from robot and current goal
+            robot_x, robot_y = self.known_map.shape[0]//2, self.known_map.shape[1]//2
+            dist_from_robot = np.hypot(fx - robot_x, fy - robot_y)
+            
+            # Score based on:
+            # 1. Number of unknown neighbors (more is better)
+            # 2. Distance from current position (closer is better)
+            score = (2.0 * unknown_neighbors    # Weight unknown neighbors heavily
+                    - 0.5 * dist_from_robot)    # Slight penalty for distance
+            
+            scored_frontiers.append(((fx, fy), score))
+            
+        # Sort by score (higher is better)
+        scored_frontiers.sort(key=lambda x: -x[1])  # Negative for descending order
         
-        self.frontier_map = unknown_border
-        return frontiers
+        # Print top frontiers with scores
+        print(f"\nTop frontiers with scores:")
+        for (fx, fy), score in scored_frontiers[:3]:
+            print(f"Frontier at ({fx}, {fy}): score = {score:.2f}")
+            
+        # Update frontier map
+        self.frontier_map = np.zeros(self.size, dtype=bool)
+        for (fx, fy), _ in scored_frontiers:
+            self.frontier_map[fx, fy] = True
+            
+        # Return the frontier positions only
+        return [f[0] for f in scored_frontiers]
         
     def is_valid_frontier(self, point, planning_map):
         """Check if a frontier point is valid and reachable."""
@@ -125,10 +193,12 @@ class Explorer:
         
         # Check bounds
         if not (0 <= x < self.size[0] and 0 <= y < self.size[1]):
+            print(f"Frontier at ({x}, {y}) rejected: Out of bounds")
             return False
             
-        # Check if point is in free space
-        if planning_map[x, y] != 0:
+        # Check if point is known free space in both maps
+        if self.known_map[x, y] != 0 or planning_map[x, y] != 0:
+            print(f"Frontier at ({x}, {y}) rejected: Not in free space")
             return False
             
         # Check neighborhood for unknown cells
@@ -136,8 +206,19 @@ class Explorer:
         y_min, y_max = max(0, y-1), min(self.size[1], y+2)
         neighborhood = self.known_map[x_min:x_max, y_min:y_max]
         
-        # Must have at least one unknown neighbor
-        return np.any(neighborhood == -1)
+        # Must have at least one unknown neighbor and not be surrounded by obstacles
+        has_unknown = np.any(neighborhood == -1)
+        obstacle_count = np.sum(neighborhood == 1)
+        
+        if not has_unknown:
+            print(f"Frontier at ({x}, {y}) rejected: No unknown neighbors")
+            return False
+            
+        if obstacle_count >= 7:  # Leave at least one non-obstacle cell
+            print(f"Frontier at ({x}, {y}) rejected: Too many obstacles nearby")
+            return False
+            
+        return True
         
     def select_frontier(self, frontiers, robot_pos, planning_map, planner):
         """
@@ -145,7 +226,7 @@ class Explorer:
         
         Args:
             frontiers: List of frontier points
-            robot_pos: Current robot position
+            robot_pos: Current robot position (which is also the goal)
             planning_map: Map used for path planning
             planner: A* planner function
             
@@ -156,34 +237,72 @@ class Explorer:
             return None
             
         robot_grid_x, robot_grid_y = to_grid_coords(robot_pos[0], robot_pos[1])
-        valid_frontiers = []
+        goal_x, goal_y = robot_pos  # robot_pos is also the goal position
         
-        # Filter frontiers by validity and reachability
+        # Create a list to store all candidates
+        candidates = []
+        
+        # Calculate distance to goal in world coordinates
+        dist_to_goal_world = np.hypot(robot_pos[0] - goal_x, robot_pos[1] - goal_y)
+        near_goal = dist_to_goal_world < 5  # Check if we're near the goal
+        
+        # Process all frontiers first
         for frontier in frontiers:
-            if not self.is_valid_frontier(frontier, planning_map):
-                continue
-                
-            # Check if path exists to frontier
             start = (int(robot_grid_x), int(robot_grid_y))
-            goal = (int(frontier[0]), int(frontier[1]))
+            frontier_point = (int(frontier[0]), int(frontier[1]))
             
-            path = planner(planning_map, start, goal)
+            # Check if path exists to frontier
+            path = planner(planning_map, start, frontier_point)
             if path is not None:
-                # Calculate path length
-                path_length = 0
-                for i in range(len(path)-1):
-                    dx = path[i+1][0] - path[i][0]
-                    dy = path[i+1][1] - path[i][1]
-                    path_length += np.hypot(dx, dy)
-                    
-                valid_frontiers.append({
+                path_length = sum(np.hypot(path[i+1][0] - path[i][0],
+                                         path[i+1][1] - path[i][1])
+                                for i in range(len(path)-1))
+                
+                # Calculate various metrics
+                dist_to_frontier = np.hypot(frontier[0] - robot_grid_x, frontier[1] - robot_grid_y)
+                dist_to_goal = np.hypot(frontier[0] - goal_x, frontier[1] - goal_y)
+                
+                if near_goal:
+                    # Near goal mode: Prioritize getting to the goal
+                    score = (-0.7 * dist_to_goal     # Heavy weight on goal distance
+                            -0.2 * path_length       # Small penalty for path length
+                            -0.1 * dist_to_frontier) # Minimal consideration for frontier distance
+                else:
+                    # Exploration mode: Focus on efficient frontier exploration
+                    score = (-0.5 * dist_to_frontier # Prioritize closer frontiers
+                            -0.3 * path_length       # Consider path efficiency
+                            -0.2 * dist_to_goal)     # Small consideration for goal direction
+                
+                candidates.append({
                     'point': frontier,
-                    'distance': np.hypot(frontier[0] - robot_grid_x,
-                                       frontier[1] - robot_grid_y),
-                    'path_length': path_length,
-                    'direction': np.arctan2(frontier[1] - robot_grid_y,
-                                          frontier[0] - robot_grid_x)
+                    'score': score,
+                    'dist_to_goal': dist_to_goal,
+                    'path_length': path_length
                 })
+
+        if not candidates:
+            return None
+            
+        # Print all candidates and their scores for debugging
+        print("\nCandidate evaluation:")
+        for c in sorted(candidates, key=lambda x: -x['score']):
+            print(f"Point {c['point']}: score={c['score']:.2f}, "
+                  f"dist_to_goal={c['dist_to_goal']:.1f}, "
+                  f"path_length={c['path_length']:.1f}")
+        
+        # Select the best candidate
+        best_candidate = max(candidates, key=lambda x: x['score'])
+        print(f"\nSelected point {best_candidate['point']} with score {best_candidate['score']:.2f}")
+        
+        # Record this frontier in history
+        self.history['visited_frontiers'].append({
+            'point': best_candidate['point'],
+            'time': time.time() - self.start_time if self.start_time else 0,
+            'coverage': self.get_coverage_metrics()['coverage']
+        })
+        
+        # Return the selected point
+        return best_candidate['point']
         
         if not valid_frontiers:
             return None
@@ -196,13 +315,28 @@ class Explorer:
                 angle_diff = abs(f['direction'] - visited['direction'])
                 angle_penalty += np.exp(-angle_diff)
             
+            # Calculate distances to goal and frontier
+            goal_x, goal_y = robot_pos  # robot_pos is already the goal position passed from main.py
+            dist_to_goal = np.hypot(f['point'][0] - goal_x, f['point'][1] - goal_y)
+            
+            # If goal is very close (within 5 units), strongly prefer frontiers near the goal
+            near_goal = dist_to_goal < 5
+            
             # Calculate score (higher is better)
-            f['score'] = (
-                1.0 * f['distance'] +  # Prefer distant frontiers
-                -0.5 * f['path_length'] +  # But consider path length
-                -0.3 * angle_penalty +  # Penalize similar directions
-                0.2 * np.random.random()  # Add small randomness
-            )
+            if near_goal:
+                # When near goal, heavily prioritize frontiers closer to goal
+                f['score'] = (-0.7 * dist_to_goal           # Strong preference for goal-ward frontiers
+                            -0.2 * f['path_length']         # Less emphasis on path length
+                            -0.1 * angle_penalty)           # Minimal direction penalty
+            else:
+                # Normal exploration mode
+                f['score'] = (-0.4 * f['path_length']       # Path efficiency
+                            -0.3 * dist_to_goal            # Goal direction
+                            -0.2 * angle_penalty           # Avoid revisiting
+                            -0.1 * f['distance'])          # Prefer closer frontiers
+                
+            # Add tiny randomness to break ties
+            f['score'] += 0.05 * np.random.random()
         
         # Select frontier with highest score
         selected = max(valid_frontiers, key=lambda x: x['score'])

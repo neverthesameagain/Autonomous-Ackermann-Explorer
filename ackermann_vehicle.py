@@ -4,12 +4,12 @@ from math import sin, cos, tan, atan, pi
 class AckermannVehicle:
     """Full 4-wheel Ackermann-steered vehicle model with wheel geometry."""
     
-    def __init__(self, x=0.0, y=0.0, theta=0.0, wheelbase=0.55, track_width=0.3, wheel_radius=0.06, dt=0.01):
+    def __init__(self, x=0.0, y=0.0, theta=0.0, wheelbase=0.55, track_width=0.3, wheel_radius=0.06, dt=0.05):
         # Vehicle geometry
         self.L = wheelbase        # 0.55m wheelbase for better stability
         self.T = track_width     # 0.3m track width
         self.r_wheel = wheel_radius
-        self.dt = dt
+        self.dt = dt             # Increased time step for smoother motion
         
         # State variables
         self.x = x  # global x position
@@ -26,10 +26,14 @@ class AckermannVehicle:
         self.omega_LR = 0.0     # left rear wheel angular velocity
         self.omega_RR = 0.0     # right rear wheel angular velocity
         
-        # Motion limits - increased for better performance
-        self.max_steering = 0.7  # ~40 degrees
-        self.max_velocity = 2.0  # Increased from 1.0 to 2.0 m/s
-        self.max_acceleration = 1.0  # Increased from 0.5 to 1.0 m/s²
+        # Motion limits - optimized for smooth, fast motion
+        self.max_steering = 1.0  # ~57 degrees max steering
+        self.max_velocity = 4.0  # 4.0 m/s top speed
+        self.max_acceleration = 2.0  # 2.0 m/s² acceleration
+        
+        # Motion smoothing parameters
+        self.steering_smoothing = 0.8  # Higher values = smoother steering (0-1)
+        self.velocity_smoothing = 0.7  # Higher values = smoother acceleration (0-1)
         
         # History for plotting
         self.history = {
@@ -144,7 +148,17 @@ class AckermannVehicle:
         # Update steering geometry
         self.compute_steering_angles(delta_cmd)
         
-        # Update position and heading (bicycle model approximation)
+        # Smooth steering changes
+        target_delta = delta_cmd
+        current_delta = atan(self.omega * self.L / max(0.1, self.v))  # Current steering angle
+        delta_cmd = (current_delta * self.steering_smoothing + 
+                    target_delta * (1 - self.steering_smoothing))
+        
+        # Smooth velocity changes
+        self.v = (self.v * self.velocity_smoothing + 
+                 v_cmd * (1 - self.velocity_smoothing))
+        
+        # Update position and heading with smoothed controls
         self.x += self.v * cos(self.theta) * self.dt
         self.y += self.v * sin(self.theta) * self.dt
         self.omega = (self.v / self.L) * tan(delta_cmd)

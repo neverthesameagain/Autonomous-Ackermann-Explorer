@@ -84,11 +84,20 @@ class PurePursuitController:
         alpha = math.atan2(math.sin(alpha), math.cos(alpha))  # wrap angle
         
         # Pure pursuit steering control
-        delta = math.atan2(2 * L * math.sin(alpha), self.lookahead)
+        delta = math.atan2(2 * L * math.sin(alpha), max(0.1, self.lookahead))
         
-        # Adjust velocity based on curvature
-        v = self.v_ref * (1 - abs(delta) / math.pi)  # slow down for turns
-        v = max(0.1, v)  # maintain minimum velocity
+        # Adjust velocity based on multiple factors
+        turning_factor = 1 - abs(delta) / math.pi  # reduce speed in sharp turns
+        obstacle_factor = 1.0  # will be set by exploration loop
+        
+        # Calculate base velocity
+        v = self.v_ref * turning_factor * obstacle_factor
+        
+        # Allow zero velocity for obstacle avoidance while maintaining steering
+        v = max(0.0, v)  # can be zero for pure rotation
+        
+        # Limit maximum steering angle
+        delta = np.clip(delta, -math.pi/3, math.pi/3)  # limit to ±60 degrees
         
         return v, delta
         

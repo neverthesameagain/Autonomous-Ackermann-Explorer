@@ -14,12 +14,12 @@ def create_test_environment(size=30):
     
     # Add some obstacles
     grid[10:15, 10:12] = 1  # vertical wall
-    grid[5:10, 20:22] = 1   # second wall
+    grid[1:3, 2:4] = 1   # second wall
     grid[15:20, 15:17] = 1  # third wall
     
     # Define multiple goals for testing
     goals = [
-        (25, 25),  # far corner
+        (7, 7),  # far corner
         (15, 25),  # mid-right
         (5, 25),   # near-right
         (25, 5)    # far-left
@@ -115,7 +115,7 @@ def exploration_loop(vehicle, true_map, explorer, planner, controller, viz, goal
                                        planning_map, planner)
                                        
         if target:
-            print(f"\nMoving to frontier at {target:.1f} towards goal {current_goal}")
+            print(f"\nMoving to frontier at ({target[0]:.1f}, {target[1]:.1f}) towards goal {current_goal}")
             
         # If no valid frontier found, try moving directly to goal
         if target is None:
@@ -166,17 +166,45 @@ def exploration_loop(vehicle, true_map, explorer, planner, controller, viz, goal
             # Update map as we move
             explorer.update_map_with_sensor(true_map, (vehicle.x, vehicle.y))
             
+            # Check for obstacles in front of the robot
+            heading_x = vehicle.x + 2.0 * np.cos(vehicle.theta)
+            heading_y = vehicle.y + 2.0 * np.sin(vehicle.theta)
+            
+            # Check points along the robot's heading
+            obstacle_detected = False
+            for d in np.linspace(0, 2.0, 5):  # Check 5 points up to 2 units ahead
+                check_x = vehicle.x + d * np.cos(vehicle.theta)
+                check_y = vehicle.y + d * np.sin(vehicle.theta)
+                grid_x, grid_y = int(check_x), int(check_y)
+                
+                if (0 <= grid_x < planning_map.shape[0] and 
+                    0 <= grid_y < planning_map.shape[1] and 
+                    planning_map[grid_x, grid_y] == 1):
+                    obstacle_detected = True
+                    break
+            
+            # Adjust velocity based on obstacles
+            obstacle_factor = 0.0 if obstacle_detected else 1.0
+            
             # Check for collisions and replan if needed
             if replanning_cooldown == 0:
                 current_pos = (int(vehicle.x), int(vehicle.y))
                 # Check if current path is still valid
-                if any(planning_map[int(x), int(y)] == 1 for x, y in path):
+                if obstacle_detected or any(planning_map[int(x), int(y)] == 1 for x, y in path):
                     new_path = planner(planning_map, current_pos, goal)
                     if new_path:
                         path = new_path
                         replanning_cooldown = 10
                     else:
-                        v = 0  # Stop if no alternative
+                        # If no path found, try to rotate in place to find new path
+                        v = 0
+                        delta = 0.5  # Rotate in place
+                        
+            # Modify controls based on obstacle detection
+            if obstacle_detected:
+                v *= 0.0  # Stop forward motion
+                if abs(delta) < 0.1:  # If not already turning
+                    delta = 0.5  # Turn to avoid obstacle
             
             # Update iteration and cooldown
             iteration += 1
@@ -198,12 +226,20 @@ def main():
     true_map, goals = create_test_environment(size)
     
     # Initialize vehicle at starting position
-    start = (2, 2)
+    start = (0, 0)
     vehicle = AckermannVehicle(x=start[0], y=start[1], theta=0)
     
+    # Sort goals by distance from start position
+    goals = sorted(goals, key=lambda g: np.hypot(g[0] - start[0], g[1] - start[1]))
+    
     # Initialize exploration components
-    explorer = Explorer(size=(size, size), sensor_range=4)  # Increased sensor range
-    controller = PurePursuitController(lookahead=2.5, v_ref=0.8)  # Increased speed and lookahead
+    explorer = Explorer(size=(size, size), sensor_range=5)  # Increased sensor range for faster speed
+    controller = PurePursuitController(
+        lookahead=3.0,     # Increased lookahead for higher speeds
+        v_ref=2.0,         # Increased reference velocity
+        Kp=2.0,           # Increased steering responsiveness
+        dist_threshold=1.0 # Increased threshold for smoother path following
+    )
     viz = VehicleVisualizer(map_size=size)
     
     # Run exploration
