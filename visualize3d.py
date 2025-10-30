@@ -46,7 +46,7 @@ class Visualizer3D:
         ]
         return faces
         
-    def update(self, grid, robot, path=None):
+    def update(self, grid, robot, path=None, frontiers=None):
         """
         Update both 2D and 3D visualizations
         
@@ -54,13 +54,27 @@ class Visualizer3D:
             grid: Occupancy grid (2D numpy array)
             robot: AckermannRobot instance
             path: Optional list of (x,y) path points
+            frontiers: Optional list of frontier centroids
         """
         # Clear previous plots
         self.ax2d.clear()
         self.ax3d.clear()
         
-        # 2D Plot
-        self.ax2d.imshow(grid.T, cmap='gray_r', origin='lower')
+        # 2D Plot - handle unknown cells
+        cmap = plt.cm.gray_r
+        if -1 in grid:  # If we have unknown cells
+            grid_normalized = (grid + 1) / 2  # Scale from [-1,1] to [0,1]
+            self.ax2d.imshow(grid_normalized.T, cmap=cmap, origin='lower',
+                           vmin=0, vmax=1)
+        else:
+            self.ax2d.imshow(grid.T, cmap=cmap, origin='lower')
+        
+        # Plot frontiers if provided
+        if frontiers:
+            fx = [f[0] for f in frontiers]
+            fy = [f[1] for f in frontiers]
+            self.ax2d.scatter(fx, fy, c='magenta', marker='*',
+                            label='Frontiers', s=100)
         
         # Plot path if provided
         if path:

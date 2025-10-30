@@ -1,0 +1,11 @@
+Exploration Performance Metrics
+============================
+
+Final Coverage: 10.11%
+Total Distance: 7.06m
+Frontiers Visited: 0
+
+Detailed Motion Analysis
+Total Time: 10.00s
+Average Velocity: 0.71m/s
+Maximum Velocity: 0.77m/s
