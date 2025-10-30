@@ -5,6 +5,7 @@ from ackermann_vehicle import AckermannVehicle
 from planner import astar
 from controller import PurePursuitController
 from visualize import VehicleVisualizer
+from visualize3d import Visualizer3D
 from exploration import Explorer
 import time
 
@@ -38,7 +39,7 @@ def check_collision(x, y, grid):
         return grid[ix, iy] == 1
     return True  # out of bounds is considered collision
 
-def exploration_loop(vehicle, true_map, explorer, planner, controller, viz, goals, max_iterations=1000):
+def exploration_loop(vehicle, true_map, explorer, planner, controller, viz, viz3d, goals, max_iterations=1000):
     """
     Main exploration loop with multiple goals and improved frontier selection
     
@@ -156,8 +157,10 @@ def exploration_loop(vehicle, true_map, explorer, planner, controller, viz, goal
             explorer.total_distance += np.hypot(dx, dy)
             last_pos = (vehicle.x, vehicle.y)
             
-            # Update visualization with vehicle geometry
+            # Update both 2D and 3D visualizations
             viz.update(vehicle, explorer.known_map, path, frontiers=frontiers)
+            viz3d.update(explorer.known_map, vehicle, path, frontiers=frontiers)
+            plt.pause(0.01)  # Add small pause to update display
             
             # Check if target reached
             dist_to_target = np.hypot(vehicle.x - goal[0], vehicle.y - goal[1])
@@ -240,7 +243,9 @@ def main():
         Kp=2.0,           # Increased steering responsiveness
         dist_threshold=1.0 # Increased threshold for smoother path following
     )
+    # Initialize both 2D and 3D visualizers
     viz = VehicleVisualizer(map_size=size)
+    viz3d = Visualizer3D(grid_size=(size, size), obstacle_height=1.5)  # Higher obstacles for better visibility
     
     # Run exploration
     print("Starting autonomous exploration...")
@@ -251,6 +256,7 @@ def main():
         planner=astar,
         controller=controller,
         viz=viz,
+        viz3d=viz3d,
         goals=goals
     )
     

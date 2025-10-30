@@ -188,7 +188,7 @@ class Explorer:
         return [f[0] for f in scored_frontiers]
         
     def is_valid_frontier(self, point, planning_map):
-        """Check if a frontier point is valid and reachable."""
+        """Check if a frontier point is valid, reachable, and not in an enclosed area."""
         x, y = int(point[0]), int(point[1])
         
         # Check bounds
@@ -199,6 +199,11 @@ class Explorer:
         # Check if point is known free space in both maps
         if self.known_map[x, y] != 0 or planning_map[x, y] != 0:
             print(f"Frontier at ({x}, {y}) rejected: Not in free space")
+            return False
+            
+        # Check if point is in an enclosed area using flood fill
+        if self._is_enclosed_area(x, y):
+            print(f"Frontier at ({x}, {y}) rejected: In enclosed obstacle area")
             return False
             
         # Check neighborhood for unknown cells
@@ -219,6 +224,48 @@ class Explorer:
             return False
             
         return True
+        
+    def _is_enclosed_area(self, x, y):
+        """
+        Check if a point is in an area enclosed by obstacles using flood fill.
+        Returns True if the point is in an enclosed area.
+        """
+        # Create a copy of the known map for flood filling
+        flood_map = (self.known_map == 1).astype(int)  # 1 for obstacles, 0 for free/unknown
+        
+        # Initialize queue with the starting point
+        queue = [(x, y)]
+        visited = set()
+        can_escape = False
+        
+        # Perform flood fill
+        while queue and not can_escape:
+            cx, cy = queue.pop(0)
+            
+            if (cx, cy) in visited:
+                continue
+                
+            visited.add((cx, cy))
+            
+            # Check all 8 neighboring cells
+            for dx, dy in [(-1,-1), (-1,0), (-1,1), (0,-1), (0,1), (1,-1), (1,0), (1,1)]:
+                nx, ny = cx + dx, cy + dy
+                
+                # If we hit the border of the map, area is not enclosed
+                if not (0 <= nx < self.size[0] and 0 <= ny < self.size[1]):
+                    can_escape = True
+                    break
+                    
+                # If we find an unknown cell, area is not enclosed
+                if self.known_map[nx, ny] == -1:
+                    can_escape = True
+                    break
+                    
+                # If cell is free and not visited, add to queue
+                if flood_map[nx, ny] == 0 and (nx, ny) not in visited:
+                    queue.append((nx, ny))
+                    
+        return not can_escape
         
     def select_frontier(self, frontiers, robot_pos, planning_map, planner):
         """
@@ -251,9 +298,40 @@ class Explorer:
             start = (int(robot_grid_x), int(robot_grid_y))
             frontier_point = (int(frontier[0]), int(frontier[1]))
             
-            # Check if path exists to frontier
+            # Check if path exists to frontier and validate it
             path = planner(planning_map, start, frontier_point)
             if path is not None:
+                # Validate the path doesn't go through obstacles
+                path_valid = True
+                for point in path:
+                    x, y = int(point[0]), int(point[1])
+                    # Check if point is within bounds
+                    if 0 <= x < self.size[0] and 0 <= y < self.size[1]:
+                        # Check for obstacles in known map and planning map
+                        if self.known_map[x, y] == 1 or planning_map[x, y] == 1:
+                            print(f"Path rejected: goes through obstacle at ({x}, {y})")
+                            path_valid = False
+                            break
+                        # Add safety margin - check adjacent cells for obstacles
+                        for dx in [-1, 0, 1]:
+                            for dy in [-1, 0, 1]:
+                                nx, ny = x + dx, y + dy
+                                if (0 <= nx < self.size[0] and 
+                                    0 <= ny < self.size[1] and 
+                                    self.known_map[nx, ny] == 1):
+                                    print(f"Path rejected: too close to obstacle at ({nx}, {ny})")
+                                    path_valid = False
+                                    break
+                            if not path_valid:
+                                break
+                    else:
+                        print(f"Path rejected: point ({x}, {y}) out of bounds")
+                        path_valid = False
+                        break
+                
+                if not path_valid:
+                    continue
+                    
                 path_length = sum(np.hypot(path[i+1][0] - path[i][0],
                                          path[i+1][1] - path[i][1])
                                 for i in range(len(path)-1))
@@ -355,6 +433,7 @@ class Explorer:
     def update_map_with_sensor(self, true_map, robot_pos):
         """
         Update known_map based on robot's sensor reading at current position.
+        Ensures thorough obstacle detection and mapping.
         """
         x, y = robot_pos[0], robot_pos[1]
         grid_x, grid_y = to_grid_coords(x, y)
@@ -366,6 +445,22 @@ class Explorer:
         
         # Update known map within sensor range
         self.known_map[mask] = true_map[mask]
+        
+        # Extra processing for detected obstacles
+        obstacle_mask = (self.known_map == 1) & mask
+        if np.any(obstacle_mask):
+            # Create a small dilation to ensure we explore around obstacles
+            obstacle_region = binary_dilation(obstacle_mask, iterations=2)
+            # Mark cells immediately adjacent to obstacles as known free space if they are free
+            adjacent_space = obstacle_region & (true_map == 0)
+            self.known_map[adjacent_space] = true_map[adjacent_space]
+            
+        # Debug output for obstacle detection
+        num_obstacles = np.sum(obstacle_mask)
+        if num_obstacles > 0:
+            print(f"\nObstacle detection update:")
+            print(f"- Detected {num_obstacles} obstacle cells")
+            print(f"- Explored {np.sum(adjacent_space)} cells adjacent to obstacles")
         
         # Update metrics
         total_cells = self.size[0] * self.size[1]
