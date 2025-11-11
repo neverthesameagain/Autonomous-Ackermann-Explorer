@@ -8,8 +8,8 @@ from typing import Tuple
 class TrapezoidalVelocityController:
     """Trapezoidal velocity profile for smooth motion control."""
     
-    def __init__(self, max_velocity: float = 0.5, max_acceleration: float = 0.3,
-                 max_angular_velocity: float = 0.8):
+    def __init__(self, max_velocity: float = 2.5, max_acceleration: float = 1.3,
+                 max_angular_velocity: float = 2.8):
         """
         Initialize velocity controller.
         
@@ -64,7 +64,7 @@ class TrapezoidalVelocityController:
 class PathFollowingController:
     """Pure pursuit controller for path following."""
     
-    def __init__(self, lookahead_distance: float = 0.5, 
+    def __init__(self, lookahead_distance: float = 2.5, 
                  velocity_controller: TrapezoidalVelocityController = None):
         """
         Initialize path following controller.

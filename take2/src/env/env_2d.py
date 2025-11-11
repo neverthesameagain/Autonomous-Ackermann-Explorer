@@ -14,6 +14,7 @@ class Renderer2D:
         self.ax.set_ylabel('Y (m)')
         self.ax.set_title('2D Ackermann Robot Visualization')
 
+# In env_2d.py
     def draw_robot(self, robot):
         """Draw the 4-wheel Ackermann robot with proper steering"""
         # Robot body
@@ -48,7 +49,7 @@ class Renderer2D:
         dx = arrow_len * np.cos(robot.theta)
         dy = arrow_len * np.sin(robot.theta)
         self.ax.arrow(robot.x, robot.y, dx, dy, 
-                     head_width=0.2, head_length=0.3, fc='red', ec='red')
+                    head_width=0.2, head_length=0.3, fc='red', ec='red')
 
     def render(self, robot):
         self.ax.clear()
