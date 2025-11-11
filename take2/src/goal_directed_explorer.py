@@ -25,7 +25,11 @@ from src.sensors.lidar import LidarSensor
 from src.map.occupancy_grid import OccupancyGrid
 from src.planning.astar import AStarPlanner
 from src.planning.frontier_explorer import FrontierExplorer
-from src.control.velocity_controller import PathFollowingController, TrapezoidalVelocityController
+from src.control.velocity_controller import (
+    PurePursuitController, 
+    TrapezoidalVelocityController,
+    PathFollowingController
+)
 from src.objects.generator import generate_environment
 class Simple3DRenderer:
     def __init__(self, ax3d):
@@ -606,7 +610,7 @@ def ensure_dependencies():
 def main():
     ensure_dependencies()
     explorer = GoalDirectedExplorer(start_pos=None, goal_pos=None,
-                                    map_size=(10, 10), resolution=0.1)
+                                    map_size=(12, 12), resolution=0.1)
     explorer.run_exploration(max_iterations=15000)
 
 

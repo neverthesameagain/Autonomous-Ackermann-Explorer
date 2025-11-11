@@ -1,219 +1,172 @@
-# Autonomous Obstacle-Aware Exploration and Path Planning
+# Autonomous Ackermann Explorer
 
-## Overview
+An advanced autonomous exploration system for Ackermann-steered robots, featuring:
 
-This project implements a **four-wheel Ackermann-steered mobile robot** capable of autonomously exploring and navigating a 2D environment with 3D visualization. The robot generates collision-free trajectories, discovers unexplored regions, and maintains smooth motion control under non-holonomic constraints.
+- Real-time 2D/3D visualization
+- Hybrid A* path planning
+- Frontier-based exploration
+- Dynamic obstacle avoidance
+- Per-wheel dynamics simulation
+- Pure Pursuit and Trapezoidal velocity control
 
-## Features
+## Quick Start
 
-### ✅ Implemented Components
+1. **Install Dependencies**:
 
-1. **Robot Modeling**
-   - Ackermann steering kinematics (bicycle model)
-   - Trapezoidal velocity profiles for smooth acceleration/deceleration
-   - 4-wheel visualization with realistic dimensions
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. **Run the Explorer**:
 
-2. **Environment & Visualization**
-   - 2D occupancy grid mapping with probabilistic updates
-   - 3D visualization using Matplotlib
-   - Multiple obstacle types: Box, Cylinder, Cone, Hemisphere
-   - Real-time LiDAR scanning and mapping
+   ```bash
+   python run.py
+   ```
 
-3. **Path Planning**
-   - **A* global planner** with obstacle inflation for safety
-   - Path smoothing for efficient trajectories
-   - Collision checking and validation
-
-4. **Exploration Strategy**
-   - **Frontier-based exploration** to identify unexplored regions
-   - Information gain calculation for frontier selection
-   - Automatic goal selection and replanning
-
-5. **Motion Control**
-   - **Pure pursuit path following** controller
-   - Trapezoidal velocity profiles for smooth motion
-   - Adaptive speed control based on path curvature
-
-## Project Structure
+## 🧩 Project Structure
 
 ```
-take2/
-├── src/
-│   ├── robot/
-│   │   └── ackermann.py          # Ackermann robot model
-│   ├── sensors/
-│   │   └── lidar.py               # LiDAR sensor simulation
-│   ├── map/
-│   │   ├── occupancy_grid.py      # Probabilistic occupancy mapping
-│   │   └── occupancy_map.py       # Legacy map interface
-│   ├── planning/
-│   │   ├── astar.py               # A* path planner
-│   │   └── frontier_explorer.py   # Frontier detection & selection
-│   ├── control/
-│   │   └── velocity_controller.py # Trapezoidal velocity & path following
-│   ├── objects/
-│   │   ├── primitives.py          # 3D obstacle primitives
-│   │   └── generator.py           # Environment generation
-│   ├── env/
-│   │   ├── env_3d.py              # 3D visualization
-│   │   ├── env_2d_map.py          # 2D map visualization
-│   │   └── demo_env.py            # Simple demo
-│   └── autonomous_explorer.py     # Main autonomous system
-├── requirements.txt
-└── README.md
+src/
+├── control/               # Motion control algorithms
+│   └── velocity_controller.py  # Pure Pursuit and Trapezoidal velocity controllers
+├── map/                   # Mapping components
+│   └── occupancy_grid.py  # Grid-based environment representation
+├── objects/               # Environment objects
+│   └── generator.py       # Procedural environment generation
+├── planning/              # Path planning algorithms
+│   ├── astar.py           # A* path planning
+│   └── frontier_explorer.py # Frontier detection and selection
+├── robot/                 # Robot models
+│   └── ackermann.py       # Ackermann steering kinematics
+├── sensors/               # Sensor models
+│   └── lidar.py           # LiDAR sensor simulation
+└── goal_directed_explorer.py  # Main application
 ```
 
-## Installation
+## Key Features
 
-1. **Create virtual environment:**
-```bash
-cd /Users/aryanmathur/Desktop/RDCP/take2
-python3 -m venv venv
-source venv/bin/activate
+### 1. Hybrid A* Path Planning
+
+- Combines discrete graph search with continuous state-space sampling
+- Dynamic obstacle inflation for safety margins
+- Path smoothing and optimization
+
+### 2. Frontier Exploration
+
+Frontier exploration is the process of identifying and navigating to the boundaries between explored and unexplored areas. Our implementation includes:
+
+#### Key Components:
+
+- **Frontier Detection**
+
+  - Uses edge detection on the occupancy grid to find boundaries
+  - Groups adjacent frontier cells into regions
+  - Filters out small or unreachable frontiers
+- **Information Gain Calculation**
+
+  - Estimates potential new information from each frontier
+  - Considers visible area and potential new paths
+  - Prioritizes frontiers that lead towards unexplored regions
+- **Dynamic Re-planning**
+
+  - Continuously updates frontier information as the map changes
+  - Re-evaluates frontier selection when new obstacles are detected
+  - Handles dynamic environments with moving obstacles
+
+#### Frontier Selection Strategy:
+
+1. **Scoring System**
+
+   - Distance to robot (closer frontiers preferred)
+   - Distance to goal (directs exploration towards the goal)
+   - Information gain (prioritizes high-yield frontiers)
+   - Path quality (considers path length and safety)
+2. **Adaptive Behavior**
+
+   - Balances exploration and exploitation
+   - Adjusts strategy based on remaining battery/time
+   - Handles dead-ends and local minima
+
+### 3. Motion Control System
+
+The motion control system combines multiple controllers to achieve smooth and precise robot movement:
+
+#### 3.1 Pure Pursuit Controller
+
+```python
+controller = PurePursuitController(
+    lookahead=1.0,      # Lookahead distance (m)
+    Kp=1.5,            # Steering gain
+    v_ref=0.5,         # Reference velocity (m/s)
+    dist_threshold=0.5  # Waypoint switching threshold
+)
 ```
 
-2. **Install dependencies:**
-```bash
-pip install -r requirements.txt
+- **Path Following**: Uses a lookahead point to generate smooth trajectories
+- **Adaptive Lookahead**: Adjusts based on path curvature and speed
+- **Target Selection**: Dynamically selects the most appropriate target point
+- **Obstacle Avoidance**: Reduces speed near obstacles and sharp turns
+
+#### 3.2 Trapezoidal Velocity Profile
+
+```python
+velocity_controller = TrapezoidalVelocityController(
+    max_velocity=0.5,        # m/s
+    max_acceleration=0.3,    # m/s²
+    max_angular_velocity=0.8 # rad/s
+)
 ```
 
-Required packages:
-- numpy
-- matplotlib
-- scipy
+- **Smooth Transitions**: Ensures jerk-limited motion
+- **Velocity Ramping**: Prevents wheel slip and ensures stability
+- **Dynamic Adjustment**: Modifies profile based on path curvature
 
-## Usage
+#### 3.3 Ackermann Kinematics
 
-### Run Autonomous Exploration
+- **Steering Geometry**: Implements correct Ackermann steering angles
+- **Wheel Speed Control**: Computes individual wheel speeds
+- **Dynamic Constraints**: Enforces mechanical limits
 
-```bash
-source venv/bin/activate
-python3 -m src.autonomous_explorer
+#### 3.4 Integrated Control Flow
+
+1. **Path Following**
+
+   - Pure Pursuit generates steering commands
+   - Velocity profile determines safe speeds
+   - Commands are sent to the Ackermann controller
+2. **Obstacle Response**
+
+   - Reduces speed when approaching obstacles
+   - Adjusts path to avoid collisions
+   - Recovers from potential dead-ends
+3. **Performance Optimization**
+
+   - Minimizes path tracking error
+   - Reduces energy consumption
+   - Ensures passenger comfort
+
+### 4. Visualization
+
+- Real-time 2D map with exploration progress
+- 3D environment rendering
+- Dynamic path visualization
+- Performance metrics display
+
+## 🛠 Configuration
+
+Modify these parameters in `goal_directed_explorer.py`:
+
+```python
+explorer = GoalDirectedExplorer(
+    start_pos=None,      # Auto-generated if None
+    goal_pos=None,       # Auto-generated if None
+    map_size=(10, 10),   # Environment size in meters
+    resolution=0.1       # Grid resolution in meters
+)
 ```
-
-This will:
-1. Generate a random environment with obstacles
-2. Initialize the robot at position (2, 2)
-3. Start autonomous exploration using frontier-based strategy
-4. Display real-time 3D visualization
-5. Continue until 85% of the map is explored or max iterations reached
-
-### Run Simple Demo
-
-```bash
-python3 src/env/demo_env.py
-```
-
-This runs a simpler demo with manual control patterns.
-
-## How It Works
-
-### 1. Sensing
-- LiDAR sensor scans the environment (270° FOV, 108 beams)
-- Returns range measurements to obstacles
-
-### 2. Mapping
-- Occupancy grid updated using probabilistic ray tracing
-- Bresenham's algorithm for efficient line tracing
-- Log-odds representation for robust updates
-
-### 3. Planning
-- **Frontier Detection**: Identifies boundaries between free and unknown space
-- **Frontier Selection**: Chooses best frontier based on distance and information gain
-- **A* Planning**: Computes optimal collision-free path to selected frontier
-- **Path Smoothing**: Removes unnecessary waypoints
-
-### 4. Control
-- **Pure Pursuit**: Follows planned path with lookahead distance
-- **Trapezoidal Velocity**: Ensures smooth acceleration/deceleration
-- **Adaptive Speed**: Slows down for sharp turns, speeds up on straight paths
-
-### 5. Visualization
-- Real-time 3D rendering of environment
-- Robot shown with 4-wheel model
-- Obstacles rendered with colors
-- Path visualization (optional)
-
-## Key Parameters
-
-### Robot Parameters
-- `wheelbase`: 0.3m (distance between front and rear axles)
-- `max_velocity`: 0.5 m/s
-- `max_acceleration`: 0.3 m/s²
-- `body_length`: 2.4m
-- `body_width`: 1.5m
-
-### Sensor Parameters
-- `fov`: 270° (field of view)
-- `num_beams`: 108
-- `max_range`: 6.0m
-
-### Planning Parameters
-- `resolution`: 0.1m (grid cell size)
-- `inflation_radius`: 3 cells (safety margin)
-- `lookahead_distance`: 0.5m (pure pursuit)
-- `min_frontier_size`: 5 cells
-
-### Exploration Parameters
-- `exploration_threshold`: 85% (when to stop)
-- `max_iterations`: 2000
 
 ## Performance Metrics
 
-The system tracks:
-- **Exploration coverage**: Percentage of map explored
-- **Distance traveled**: Total path length
-- **Time elapsed**: Simulation time
-- **Average speed**: Distance/time ratio
-
-## Future Extensions
-
-### Planned Improvements
-1. **Hybrid-A*** for better handling of non-holonomic constraints
-2. **Dynamic obstacle handling** for moving objects
-3. **Multi-robot coordination** for faster exploration
-4. **Better path smoothing** using splines or Bezier curves
-
-### Optional: Reinforcement Learning
-- **PPO/DQN** for local obstacle avoidance
-- **Stable-Baselines3** integration
-- Learning-based control from sensor inputs
-- Hybrid classical + RL approach
-
-## Troubleshooting
-
-### Import Errors
-Make sure you're running from the project root and using the virtual environment:
-```bash
-cd /Users/aryanmathur/Desktop/RDCP/take2
-source venv/bin/activate
-```
-
-### Visualization Issues
-If matplotlib windows don't appear:
-```bash
-# On macOS, you might need:
-pip install --upgrade matplotlib
-```
-
-### No Path Found
-- Increase `inflation_radius` if robot is too cautious
-- Decrease `inflation_radius` if no paths are found
-- Adjust `min_frontier_size` for frontier detection
-
-## References
-
-- Ackermann Steering: Bicycle model kinematics
-- A* Algorithm: Hart, Nilsson, Raphael (1968)
-- Frontier Exploration: Yamauchi (1997)
-- Pure Pursuit: Coulter (1992)
-- Occupancy Grid Mapping: Moravec & Elfes (1985)
-
-## License
-
-Educational project for autonomous robotics research.
-
-## Author
-
-Aryan Mathur
-November 2025
+- **Exploration Rate**: Percentage of environment mapped
+- **Path Length**: Total distance traveled
+- **Computation Time**: Per-iteration processing time
+- **Success Rate**: Goal-reaching reliability
