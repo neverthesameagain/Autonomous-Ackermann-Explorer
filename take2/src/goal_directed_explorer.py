@@ -28,49 +28,39 @@ from src.planning.frontier_explorer import FrontierExplorer
 from src.control.velocity_controller import PathFollowingController, TrapezoidalVelocityController
 from src.objects.generator import generate_environment
 class Simple3DRenderer:
-    """Lightweight 3D Ackermann car visualization with follow camera."""
-
-    def __init__(self, fig, position=(0.7, 0.05, 0.3, 0.9)):
-        self.ax3d = fig.add_axes(position, projection='3d')
-        #self.ax3d.set_title("3D View — Follow Cam")
-        #self.ax3d.set_box_aspect([1, 1, 0.5])  # equal scaling
-        #self.ax3d.view_init(elev=35, azim=-60)
-
+    def __init__(self, ax3d):
+        self.ax = ax3d
         self.car_box = None
-        self.obstacle_boxes = []
         self.goal_marker = None
+        self.obstacles = []
 
     def draw_environment(self, obstacles, goal):
-        """Render static obstacles and goal once."""
         for obs in obstacles:
             x, y = getattr(obs, "x", 0), getattr(obs, "y", 0)
-            size = getattr(obs, "radius", 0.5) or getattr(obs, "width", 1.0)
             h = getattr(obs, "height", 1.0)
-            cube = [
-                [(x - size, y - size, 0),
-                 (x + size, y - size, 0),
-                 (x + size, y + size, 0),
-                 (x - size, y + size, 0),
-                 (x - size, y - size, h),
-                 (x + size, y - size, h),
-                 (x + size, y + size, h),
-                 (x - size, y + size, h)]
-            ]
-            faces = [
-                [cube[0][0], cube[0][1], cube[0][2], cube[0][3]],  # bottom
-                [cube[0][4], cube[0][5], cube[0][6], cube[0][7]],  # top
-                [cube[0][0], cube[0][1], cube[0][5], cube[0][4]],
-                [cube[0][2], cube[0][3], cube[0][7], cube[0][6]],
-            ]
-            box = Poly3DCollection(faces, alpha=0.4, facecolor='brown', edgecolor='k')
-            self.ax3d.add_collection3d(box)
-            self.obstacle_boxes.append(box)
-
+            color = getattr(obs, "color", (0.4, 0.3, 0.2))
+            if hasattr(obs, "radius"):  # cylinder-like
+                theta = np.linspace(0, 2*np.pi, 20)
+                X = obs.radius*np.cos(theta) + x
+                Y = obs.radius*np.sin(theta) + y
+                Z = np.zeros_like(theta)
+                self.ax.plot_surface(
+                    np.vstack([X, X]),
+                    np.vstack([Y, Y]),
+                    np.array([[0]*20, [h]*20]),
+                    color=color, alpha=0.6, linewidth=0
+                )
+            else:  # box-like
+                L, W = getattr(obs, "width", 1.0), getattr(obs, "length", 1.0)
+                xx = [x-L/2, x+L/2]
+                yy = [y-W/2, y+W/2]
+                X, Y = np.meshgrid(xx, yy)
+                self.ax.plot_surface(X, Y, np.zeros_like(X), color=color, alpha=0.6)
+                self.ax.plot_surface(X, Y, np.full_like(X, h), color=color, alpha=0.6)
         gx, gy = goal
-        self.goal_marker = self.ax3d.scatter(gx, gy, 0.1, color='red', s=60, marker='*', label='Goal')
+        self.goal_marker = self.ax.scatter(gx, gy, 0.1, color="red", s=80, marker="*")
 
     def update_car(self, x, y, theta):
-        """Update the car's 3D position and orientation."""
         L, W, H = 0.6, 0.3, 0.2
         verts = np.array([
             [-L/2, -W/2, 0],
@@ -82,34 +72,34 @@ class Simple3DRenderer:
             [ L/2,  W/2, H],
             [-L/2,  W/2, H],
         ])
-
-        # rotate + translate
         R = np.array([
             [np.cos(theta), -np.sin(theta), 0],
             [np.sin(theta),  np.cos(theta), 0],
             [0, 0, 1],
         ])
         verts = verts @ R.T + np.array([x, y, 0])
-
         faces = [
-            [verts[i] for i in [0, 1, 2, 3]],  # bottom
-            [verts[i] for i in [4, 5, 6, 7]],  # top
-            [verts[i] for i in [0, 1, 5, 4]],
-            [verts[i] for i in [1, 2, 6, 5]],
-            [verts[i] for i in [2, 3, 7, 6]],
-            [verts[i] for i in [3, 0, 4, 7]],
+            [verts[i] for i in [0,1,2,3]],
+            [verts[i] for i in [4,5,6,7]],
+            [verts[i] for i in [0,1,5,4]],
+            [verts[i] for i in [1,2,6,5]],
+            [verts[i] for i in [2,3,7,6]],
+            [verts[i] for i in [3,0,4,7]],
         ]
-
         if self.car_box:
             self.car_box.remove()
+        from mpl_toolkits.mplot3d.art3d import Poly3DCollection
         self.car_box = Poly3DCollection(faces, facecolor='skyblue', edgecolor='k', alpha=0.9)
-        self.ax3d.add_collection3d(self.car_box)
+        self.ax.add_collection3d(self.car_box)
 
-        # Update camera to follow the car
-        self.ax3d.set_xlim(x - 5, x + 5)
-        self.ax3d.set_ylim(y - 5, y + 5)
-        self.ax3d.set_zlim(0, 2)
-        self.ax3d.view_init(elev=35, azim=-np.degrees(theta) + 90)
+        # Camera follows behind vehicle
+        cam_offset = np.array([-3*np.cos(theta), -3*np.sin(theta), 2])
+        cam_target = np.array([x, y, 0])
+        cam_pos = cam_target + cam_offset
+        self.ax.set_xlim(x - 5, x + 5)
+        self.ax.set_ylim(y - 5, y + 5)
+        self.ax.set_zlim(0, 3)
+        self.ax.view_init(elev=25, azim=-np.degrees(theta) + 90)
 
 class VehiclePatch:
     """Draws a simple rectangular Ackermann car with turning wheels."""
@@ -224,80 +214,96 @@ class GoalDirectedExplorer:
     #  Visualization setup
     # ================================================================
     def _setup_visualization(self):
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 (needed for 3D projection)
+
         plt.ion()
-        self.fig = plt.figure(figsize=(12, 6))
-        gs = self.fig.add_gridspec(2, 2, width_ratios=[1.3, 1.0], height_ratios=[1, 1])
+        self.fig = plt.figure(figsize=(14, 9))
+        gs = self.fig.add_gridspec(
+            3, 2,
+            width_ratios=[1.4, 1.0],
+            height_ratios=[1, 1, 1]
+        )
 
-        # Map
+        # Left (full height) — 2D exploration
         self.ax_map = self.fig.add_subplot(gs[:, 0])
-        self.vehicle_patch = VehiclePatch(self.ax_map)
-
         self.ax_map.set_xlim(0, self.map_size[0])
         self.ax_map.set_ylim(0, self.map_size[1])
         self.ax_map.set_aspect("equal")
-        self.ax_map.set_title("Exploration Map")
+        self.ax_map.set_title("2D Exploration Map — Frontiers, Robot, Goal")
 
-        # Velocities
+        # Robot rectangle + wheels
+        self.vehicle_patch = VehiclePatch(self.ax_map)
+
+        # Top-right — linear/angular velocity
         self.ax_vel = self.fig.add_subplot(gs[0, 1])
         self.ax_vel.set_title("Linear / Angular Velocity")
         self.ax_vel.set_xlabel("Time (s)")
         self.ax_vel.set_ylabel("Velocity (m/s, rad/s)")
 
-        # Wheels
+        # Mid-right — per-wheel dynamics
         self.ax_wheel = self.fig.add_subplot(gs[1, 1])
-        self.ax_wheel.set_title("Per-Wheel Velocity (m/s)")
+        self.ax_wheel.set_title("Per-Wheel Velocity")
         self.ax_wheel.set_xlabel("Time (s)")
         self.ax_wheel.set_ylabel("Velocity (m/s)")
 
+        # Bottom-right — 3D environment view (follow-cam)
+        self.ax_3d = self.fig.add_subplot(gs[2, 1], projection="3d")
+        self.ax_3d.set_title("3D Follow-Camera View")
+        self.ax_3d.set_box_aspect([1, 1, 0.5])
+
+        # Create 3D renderer and draw static scene
+        self.renderer3d = Simple3DRenderer(self.ax_3d)
+        self.renderer3d.draw_environment(self.obstacles, self.goal_pos)
+
+        # Back-compat alias
         self.ax_2d = self.ax_map
-        # Add 3D view on the same figure
-        '''self.renderer3d = Simple3DRenderer(self.fig)
-        self.renderer3d.draw_environment(self.obstacles, self.goal_pos)'''
-
-
-    # ================================================================
-    #  Visualization update
-    # ================================================================
     def _update_visualization(self):
-        """Update exploration map and dynamics plots in real time."""
-        # --- MAP PANEL ---------------------------------------------------
+        """Update exploration map, dynamics plots, and 3D follow-cam in real time."""
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        # ---------------- Map panel (no full clear) ----------------
         grid = self.occupancy_grid.grid
 
-        # Instead of clearing, update image data directly
-        if not hasattr(self, "map_img"):
-            colored = np.zeros((*grid.shape, 3))
-            unknown = (grid >= 0.35) & (grid <= 0.65)
-            free = grid < 0.35
-            occ = grid > 0.65
+        # colorize occupancy once; then just set_data()
+        def _colorize(g):
+            colored = np.zeros((*g.shape, 3))
+            unknown = (g >= 0.35) & (g <= 0.65)
+            free = g < 0.35
+            occ = g > 0.65
             colored[unknown] = [0.7, 0.7, 0.7]
-            colored[free] = [0.8, 0.9, 1.0]
-            colored[occ] = [0.2, 0.1, 0.1]
+            colored[free]    = [0.8, 0.9, 1.0]
+            colored[occ]     = [0.2, 0.1, 0.1]
+            return colored
+
+        if not hasattr(self, "map_img"):
             self.map_img = self.ax_map.imshow(
-                colored, origin="lower",
+                _colorize(grid),
+                origin="lower",
                 extent=[0, self.map_size[0], 0, self.map_size[1]]
             )
         else:
-            colored = np.zeros((*grid.shape, 3))
-            unknown = (grid >= 0.35) & (grid <= 0.65)
-            free = grid < 0.35
-            occ = grid > 0.65
-            colored[unknown] = [0.7, 0.7, 0.7]
-            colored[free] = [0.8, 0.9, 1.0]
-            colored[occ] = [0.2, 0.1, 0.1]
-            self.map_img.set_data(colored)
+            self.map_img.set_data(_colorize(grid))
 
-        # Trajectory and robot
+        # trajectory & anchors
         traj = np.array(self.visited_positions)
         if len(traj) > 1:
             self.ax_map.plot(traj[:, 0], traj[:, 1], "b-", lw=1.5, label="Trajectory")
         self.ax_map.scatter(*self.start_pos, c="green", s=80, label="Start")
-        self.ax_map.scatter(*self.goal_pos, c="red", s=90, marker="X", label="Goal")
+        self.ax_map.scatter(*self.goal_pos,  c="red",   s=90, marker="X", label="Goal")
 
-        # ✅ Draw the live car
+        # live car patch (rectangle + steering wheels)
         steer_angle = self.ang_log[-1] if self.ang_log else 0.0
-        self.vehicle_patch.update(self.robot.x, self.robot.y, self.robot.theta, steer_angle)
+        current_v   = self.vel_log[-1] if self.vel_log else 0.0
+        # If your VehiclePatch.update supports v (for spinning wheels), pass v=current_v
+        try:
+            self.vehicle_patch.update(self.robot.x, self.robot.y, self.robot.theta, steer_angle, v=current_v)
+        except TypeError:
+            # fallback to signature without v
+            self.vehicle_patch.update(self.robot.x, self.robot.y, self.robot.theta, steer_angle)
 
-        # Frontiers
+        # frontiers & selected frontier
         if self.frontier_display:
             fx, fy = zip(*self.frontier_display)
             self.ax_map.scatter(fx, fy, s=25, color="lime", alpha=0.8, label="Frontiers")
@@ -311,47 +317,45 @@ class GoalDirectedExplorer:
         self.ax_map.set_ylim(0, self.map_size[1])
         self.ax_map.set_title("Exploration Map — Robot, Frontiers, Goal")
 
-        # ✅ Merge duplicate labels in legend
+        # deduplicate legend entries
         handles, labels = self.ax_map.get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
         self.ax_map.legend(by_label.values(), by_label.keys(), loc="upper right")
 
-
-        # --- VELOCITY PANEL ---------------------------------------------
+        # ---------------- Velocity panel ----------------
         self.ax_vel.clear()
         if self.time_log:
             self.ax_vel.plot(self.time_log, self.vel_log, "b-", lw=1.2, label="Linear Velocity v (m/s)")
             self.ax_vel.plot(self.time_log, self.ang_log, "r--", lw=1.0, label="Steering Angle δ (rad)")
-            self.ax_vel.legend()
             self.ax_vel.grid(True)
             self.ax_vel.set_xlabel("Time (s)")
             self.ax_vel.set_ylabel("Velocity (m/s) / Angle (rad)")
-            current_v = self.vel_log[-1]
-            current_d = np.degrees(self.ang_log[-1])
-            self.ax_vel.set_title(f"Linear / Angular Velocity — v={current_v:.2f} m/s, δ={current_d:.1f}°")
+            self.ax_vel.legend()
+            self.ax_vel.set_title(
+                f"Linear / Angular Velocity — v={self.vel_log[-1]:.2f} m/s, δ={np.degrees(self.ang_log[-1]):.1f}°"
+            )
 
-        # --- WHEEL DYNAMICS PANEL ---------------------------------------
+        # ---------------- Wheel dynamics panel ----------------
         self.ax_wheel.clear()
         if self.time_log:
             self.ax_wheel.plot(self.time_log, self.fl_log, "r-", label="Front Left (FL)")
             self.ax_wheel.plot(self.time_log, self.fr_log, "m-", label="Front Right (FR)")
             self.ax_wheel.plot(self.time_log, self.rl_log, "g-", label="Rear Left (RL)")
             self.ax_wheel.plot(self.time_log, self.rr_log, "b-", label="Rear Right (RR)")
-            self.ax_wheel.legend()
             self.ax_wheel.grid(True)
             self.ax_wheel.set_xlabel("Time (s)")
             self.ax_wheel.set_ylabel("Wheel Linear Velocity (m/s)")
-            if self.fl_log:
-                avg_speed = np.mean([self.fl_log[-1], self.fr_log[-1], self.rl_log[-1], self.rr_log[-1]])
-                self.ax_wheel.set_title(f"Per-Wheel Dynamics — Avg={avg_speed:.2f} m/s")
-        # --- Update 3D follow camera ---
-        #self.renderer3d.update_car(self.robot.x, self.robot.y, self.robot.theta)
+            self.ax_wheel.legend()
+            avg_speed = np.mean([self.fl_log[-1], self.fr_log[-1], self.rl_log[-1], self.rr_log[-1]])
+            self.ax_wheel.set_title(f"Per-Wheel Dynamics — Avg={avg_speed:.2f} m/s")
 
-        # --- DRAW FRAME --------------------------------------------------
+        # ---------------- 3D follow camera ----------------
+        self.renderer3d.update_car(self.robot.x, self.robot.y, self.robot.theta)
+
+        # ---------------- draw frame ----------------
         self.fig.canvas.draw_idle()
         self.fig.canvas.flush_events()
         plt.pause(0.0001)
-
 
     # ================================================================
     #  Exploration loop
@@ -555,9 +559,52 @@ class GoalDirectedExplorer:
 
 
 # ================================================================
+# Auto dependency check and environment bootstrap
+# ================================================================
+import importlib
+import subprocess
+import sys
+import os
+import venv
+
+REQUIRED_PACKAGES = ["numpy", "matplotlib", "scipy"]
+
+def ensure_dependencies():
+    missing = []
+    for pkg in REQUIRED_PACKAGES:
+        try:
+            importlib.import_module(pkg)
+        except ImportError:
+            missing.append(pkg)
+
+    if not missing:
+        print("✅ All dependencies satisfied.")
+        return
+
+    print(f"⚙️  Installing missing dependencies: {missing}")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", *missing])
+        print("✅ Installed successfully.")
+        return
+    except Exception as e:
+        print(f"❌ Direct install failed: {e}")
+        print("Creating virtual environment...")
+        venv_dir = "env"
+        venv.EnvBuilder(with_pip=True).create(venv_dir)
+        pip_exe = os.path.join(venv_dir, "bin", "pip")
+        python_exe = os.path.join(venv_dir, "bin", "python")
+        subprocess.check_call([pip_exe, "install", *missing])
+        print("✅ Dependencies installed in virtual environment.")
+        print(f"To activate: source {venv_dir}/bin/activate")
+        sys.exit(0)
+
+
+
+# ================================================================
 #  Entry point
 # ================================================================
 def main():
+    ensure_dependencies()
     explorer = GoalDirectedExplorer(start_pos=None, goal_pos=None,
                                     map_size=(10, 10), resolution=0.1)
     explorer.run_exploration(max_iterations=15000)
