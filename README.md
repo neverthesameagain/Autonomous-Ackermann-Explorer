@@ -1,119 +1,178 @@
-# Autonomous Ackermann Explorer
+Autonomous Exploration & Path Planning System
 
-A Python-based autonomous exploration system for an Ackermann-steered robot, featuring frontier-based exploration, dynamic path planning, and 3D visualization.
+### *Ackermann Robot · Frontier Exploration · A* · Pure Pursuit · Real-Time Mapping*
+
+This project implements a **fully autonomous exploration & navigation stack** for an Ackermann-steered robot.
+
+The robot  **builds an occupancy map** , detects  **frontiers** , **plans paths** using an enhanced A* planner, and **tracks** them using Pure Pursuit with realistic wheel dynamics.
+
+---
 
 ## Features
 
-- **Ackermann Vehicle Simulation**
-  - Realistic vehicle dynamics and constraints
-  - Smooth motion control with velocity and steering smoothing
-  - Configurable vehicle parameters (velocity, acceleration, steering limits)
+### **1. Occupancy Grid Mapping**
 
-- **Intelligent Exploration**
-  - Frontier-based exploration algorithm
-  - Smart goal selection with multi-criteria scoring
-  - Obstacle avoidance and enclosure detection
-  - Dynamic path planning with A* algorithm
+* 2D probability-based grid (free / occupied / unknown)
+* Real-time updates from simulated LiDAR
+* Consistent world ↔ grid conversions
 
-- **Advanced Visualization**
-  - Real-time 2D top-down view
-  - Dynamic 3D visualization with following camera
-  - Obstacle and path rendering
-  - Exploration progress tracking
+### **2. Frontier-Based Exploration**
 
-- **Robust Control System**
-  - Pure Pursuit controller for path following
-  - Smooth velocity and steering transitions
-  - Dynamic obstacle avoidance
-  - Automatic path replanning
+* Detects “frontiers” → boundary between known & unknown space
+* Clusters frontiers and computes centroids
+* Filters invalid and small clusters
+* Selects best frontier using:
+  * Information Gain
+  * Distance to robot
+  * Goal proximity
 
-## Project Structure
+### **3. A* Global Path Planning**
 
+* 8-connected A* search
+* Obstacle inflation for safety margins
+* Automatic fallback if start/goal is blocked
+* Path post-processing:
+  * Line-of-sight smoothing
+  * Densification for Ackermann motion
+
+### **4. Path Tracking (Pure Pursuit + Velocity Controller)**
+
+* Pure Pursuit steering law
+* Adaptive lookahead distance
+* Trapezoidal velocity profile for smooth acceleration
+* Realistic Ackermann kinematics
+* Per-wheel velocity computation (FL, FR, RL, RR)
+* Collision handling + reverse escape
+
+### **5. Visualization**
+
+* 2D live occupancy grid with:
+  * Trajectory
+  * Frontiers
+  * Goal markers
+  * Inflated obstacle zones
+* 3D rendering environment (follow-camera view)
+* Velocity + wheel dynamics plot panels
+
+---
+
+## How the System Works
+
+### **1. Sense → Map**
+
+* LiDAR scans obstacles
+* Occupancy grid updates in real time
+
+### **2. Explore**
+
+* If goal is unknown → explore frontiers
+* Compute information gain
+* Select best frontier
+
+### **3. Plan**
+
+* Run A* from robot → frontier (or final goal)
+* Smooth + densify path
+
+### **4. Control**
+
+* Compute steering via Pure Pursuit
+* Smooth speed via trapezoidal velocity controller
+* Simulate Ackermann movement
+* Log wheel velocities
+
+### **5. React**
+
+* Detect path blockage
+* Replan if obstacles appear
+* Escape if stuck or colliding
+
+---
+
+## ▶ Running the Explorer
+
+```bash
+python run .py
 ```
-├── main.py                 # Main simulation entry point
-├── ackermann_vehicle.py    # Vehicle dynamics and motion model
-├── exploration.py          # Frontier-based exploration logic
-├── controller.py           # Pure Pursuit path following controller
-├── planner.py             # A* path planning implementation
-├── visualize.py           # 2D visualization components
-├── visualize3d.py         # 3D visualization with following camera
-├── utils.py               # Utility functions
-└── metrics_logger.py      # Exploration metrics logging
+
+Modify initial settings:
+
+```python
+explorer = GoalDirectedExplorer(
+    start_pos=None,
+    goal_pos=None,
+    map_size=(15, 15),
+    resolution=0.1
+)
 ```
 
-## Current Progress
+---
 
-- [x] Implemented Ackermann vehicle dynamics with smoothing
-- [x] Developed frontier-based exploration algorithm
-- [x] Added intelligent goal selection with scoring system
-- [x] Created 3D visualization with following camera
-- [x] Implemented obstacle enclosure detection
-- [x] Added path planning and replanning capabilities
-- [x] Integrated metrics logging and visualization
+## Visualization Output
 
-## Running the Simulation
+The system displays:
 
-1. **Setup:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install numpy matplotlib scipy
-   ```
+* **2D Exploration Map**
+* **Frontiers & Selected Frontier**
+* **Robot pose (with steering wheels)**
+* **Explored trajectory**
+* **Inflated obstacles**
+* **Velocity plots (v, ω)**
+* **Wheel speed plots (FL, FR, RL, RR)**
+* **3D follow-camera environment**
 
-2. **Run:**
-   ```bash
-   python3 main.py
-   ```
+---
 
-## Key Parameters
+## Key Algorithms
 
-- **Vehicle Parameters**
-  - Maximum velocity: 4.0 m/s
-  - Maximum acceleration: 2.0 m/s²
-  - Steering smoothing: 0.7-0.8
-  - Velocity smoothing: 0.7-0.8
+### A* Planning
 
-- **Exploration Parameters**
-  - Sensor range: 5 units
-  - Minimum frontier size: 3 units
-  - Goal timeout: 200 iterations
-  - Coverage threshold: 60%
+* f = g + h (Euclidean distance heuristic)
+* 8-connected neighborhood
+* Dynamic obstacle inflation
+* Path shortcut smoothing
+* Dense waypoint generation for smooth tracking
 
-- **Visualization Settings**
-  - Camera follow distance: 5 units
-  - Camera height: 3 units
-  - Look-down angle: 25 degrees
+### Frontier Detection
 
-## Recent Improvements
+Frontier = free cell adjacent to unknown cell.
 
-1. **Exploration Logic**
-   - Enhanced frontier selection algorithm
-   - Added obstacle enclosure detection
-   - Improved goal selection criteria
+Clusters frontiers with `scipy.ndimage.label()` and uses centroid for navigation.
 
-2. **Motion Control**
-   - Added motion smoothing parameters
-   - Improved obstacle avoidance
-   - Enhanced path following
+### Pure Pursuit Tracking
 
-3. **Visualization**
-   - Added 3D view with following camera
-   - Improved obstacle rendering
-   - Real-time exploration progress display
+* Steering angle:
 
-## Future Work
+  [
 
-1. **Exploration**
-   - Implement dynamic sensor range adjustment
-   - Add multi-robot coordination support
-   - Enhance frontier clustering
+  \delta = \tan^{-1}\left(\frac{2L \sin\alpha}{d_{\text{lookahead}}}\right)
 
-2. **Control**
-   - Add adaptive velocity control
-   - Implement dynamic motion constraints
-   - Enhance obstacle avoidance behavior
+  ]
+* Naturally curvature-bound
+* Ensures stable convergence to path
 
-3. **Visualization**
-   - Add interactive camera controls
-   - Implement real-time metrics display
-   - Enhance 3D environment rendering
+## Final Goal
+
+The robot continues exploring until:
+
+* The final goal is visible in known space
+* A collision-free A* path is found
+* Robot navigates precisely to target
+* Exploration statistics are printed (distance, map coverage, time)
+
+---
+
+## Requirements
+
+* Python 3.9+
+* numpy
+* scipy
+* matplotlib
+
+Install:
+
+```bash
+pip install numpy scipy matplotlib
+```
+
+---
