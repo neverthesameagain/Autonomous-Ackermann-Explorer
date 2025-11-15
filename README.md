@@ -2,6 +2,9 @@ Autonomous Exploration & Path Planning System
 
 ### *Ackermann Robot · Frontier Exploration · A* · Pure Pursuit · Real-Time Mapping*
 
+
+Submission by Aryan Mathur -122201017
+
 This project implements a **fully autonomous exploration & navigation stack** for an Ackermann-steered robot.
 
 The robot  **builds an occupancy map** , detects  **frontiers** , **plans paths** using an enhanced A* planner, and **tracks** them using Pure Pursuit with realistic wheel dynamics.
@@ -143,11 +146,7 @@ Clusters frontiers with `scipy.ndimage.label()` and uses centroid for navigation
 
 * Steering angle:
 
-  [
-
   \delta = \tan^{-1}\left(\frac{2L \sin\alpha}{d_{\text{lookahead}}}\right)
-
-  ]
 * Naturally curvature-bound
 * Ensures stable convergence to path
 
